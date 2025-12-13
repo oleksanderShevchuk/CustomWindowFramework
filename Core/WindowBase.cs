@@ -3,8 +3,9 @@
     public abstract class WindowBase : Form
     {
         private const int BORDER_WIDTH = 6;
-        private const int TITLE_HEIGHT = 30;
         private List<WindowButton> _buttons = new List<WindowButton>();
+        private float _dpiScale => DeviceDpi / 96f;
+        private int TitleHeight => (int)(30 * _dpiScale);
 
         protected WindowBase()
         {
@@ -18,7 +19,7 @@
             SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
 
             StartPosition = FormStartPosition.CenterScreen;
-            MinimumSize = new Size(400, 300);
+            MinimumSize = new Size((int)(400 * _dpiScale), (int)(300 * _dpiScale));
             BackColor = Color.FromArgb(32, 32, 32);
 
             MouseMove += WindowBase_MouseMove;
@@ -27,9 +28,10 @@
 
         private void InitializeButtons()
         {
-            int btnSize = TITLE_HEIGHT;
+            int btnSize = TitleHeight;
             int w = ClientSize.Width;
 
+            _buttons.Clear();
             _buttons.Add(new WindowButton(ButtonType.Close, new Rectangle(w - btnSize, 0, btnSize, btnSize)));
             _buttons.Add(new WindowButton(ButtonType.Maximize, new Rectangle(w - 2 * btnSize, 0, btnSize, btnSize)));
             _buttons.Add(new WindowButton(ButtonType.Minimize, new Rectangle(w - 3 * btnSize, 0, btnSize, btnSize)));
@@ -85,7 +87,7 @@
 
             // title bar
             using (Brush brush = new SolidBrush(Color.FromArgb(40, 40, 40)))
-                g.FillRectangle(brush, 0, 0, ClientSize.Width, TITLE_HEIGHT);
+                g.FillRectangle(brush, 0, 0, ClientSize.Width, TitleHeight);
 
             // title text
             using (Brush brush = new SolidBrush(Color.White))
@@ -94,6 +96,24 @@
             // buttons
             foreach (var btn in _buttons)
                 btn.Draw(g);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+
+            if (_buttons?.Count >= 3)
+            {
+                int btnSize = TitleHeight;
+                int w = ClientSize.Width;
+
+                for (int i = 0; i < 3; i++)
+                {
+                    _buttons[i].Bounds = new Rectangle(w - (i + 1) * btnSize, 0, btnSize, btnSize);
+                }
+
+                Invalidate();
+            }
         }
 
         protected override void WndProc(ref Message m)
@@ -125,7 +145,7 @@
                     m.Result = (IntPtr)HTTOP;
                 else if (cursor.Y > h - BORDER_WIDTH)
                     m.Result = (IntPtr)HTBOTTOM;
-                else if (cursor.Y < TITLE_HEIGHT)
+                else if (cursor.Y < TitleHeight)
                 {
                     foreach (var btn in _buttons)
                         if (btn.Bounds.Contains(cursor))
@@ -133,7 +153,6 @@
                             m.Result = (IntPtr)HTCLIENT;
                             return;
                         }
-                    // drag no title bar
                     m.Result = (IntPtr)HTCAPTION;
                 }
                 else
