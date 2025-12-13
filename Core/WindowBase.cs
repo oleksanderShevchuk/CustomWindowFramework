@@ -3,19 +3,97 @@
     public abstract class WindowBase : Form
     {
         private const int BORDER_WIDTH = 6;
+        private const int TITLE_HEIGHT = 30;
+        private List<WindowButton> _buttons = new List<WindowButton>();
 
         protected WindowBase()
         {
             InitializeWindow();
+            InitializeButtons();
         }
 
         private void InitializeWindow()
         {
             FormBorderStyle = FormBorderStyle.None;
-            SetStyle(ControlStyles.ResizeRedraw, true);
+            SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(400, 300);
             BackColor = Color.FromArgb(32, 32, 32);
+
+            MouseMove += WindowBase_MouseMove;
+            MouseDown += WindowBase_MouseDown;
+        }
+
+        private void InitializeButtons()
+        {
+            int btnSize = TITLE_HEIGHT;
+            int w = ClientSize.Width;
+
+            _buttons.Add(new WindowButton(ButtonType.Close, new Rectangle(w - btnSize, 0, btnSize, btnSize)));
+            _buttons.Add(new WindowButton(ButtonType.Maximize, new Rectangle(w - 2 * btnSize, 0, btnSize, btnSize)));
+            _buttons.Add(new WindowButton(ButtonType.Minimize, new Rectangle(w - 3 * btnSize, 0, btnSize, btnSize)));
+
+            foreach (var btn in _buttons)
+                btn.Clicked += OnButtonClicked;
+        }
+
+        private void OnButtonClicked(WindowButton btn)
+        {
+            switch (btn.Type)
+            {
+                case ButtonType.Close:
+                    Close();
+                    break;
+                case ButtonType.Minimize:
+                    WindowState = FormWindowState.Minimized;
+                    break;
+                case ButtonType.Maximize:
+                    WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+                    break;
+            }
+        }
+
+        private void WindowBase_MouseDown(object sender, MouseEventArgs e)
+        {
+            foreach (var btn in _buttons)
+                if (btn.Bounds.Contains(e.Location))
+                    btn.OnClick();
+        }
+
+        private void WindowBase_MouseMove(object sender, MouseEventArgs e)
+        {
+            bool needInvalidate = false;
+            foreach (var btn in _buttons)
+            {
+                bool hover = btn.Bounds.Contains(e.Location);
+                if (hover != btn.IsHover)
+                {
+                    btn.IsHover = hover;
+                    needInvalidate = true;
+                }
+            }
+
+            if (needInvalidate)
+                Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+
+            // title bar
+            using (Brush brush = new SolidBrush(Color.FromArgb(40, 40, 40)))
+                g.FillRectangle(brush, 0, 0, ClientSize.Width, TITLE_HEIGHT);
+
+            // title text
+            using (Brush brush = new SolidBrush(Color.White))
+                g.DrawString(Text, Font, brush, 10, 5);
+
+            // buttons
+            foreach (var btn in _buttons)
+                btn.Draw(g);
         }
 
         protected override void WndProc(ref Message m)
@@ -25,14 +103,12 @@
             if (m.Msg == WM_NCHITTEST)
             {
                 base.WndProc(ref m);
+
                 Point cursor = PointToClient(Cursor.Position);
                 int w = ClientSize.Width;
                 int h = ClientSize.Height;
 
-                // top title-bar
-                int captionHeight = 30;
-
-                // resize at the edges
+                // resize zones
                 if (cursor.X < BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
                     m.Result = (IntPtr)HTTOPLEFT;
                 else if (cursor.X > w - BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
@@ -49,8 +125,17 @@
                     m.Result = (IntPtr)HTTOP;
                 else if (cursor.Y > h - BORDER_WIDTH)
                     m.Result = (IntPtr)HTBOTTOM;
-                else if (cursor.Y < captionHeight)
+                else if (cursor.Y < TITLE_HEIGHT)
+                {
+                    foreach (var btn in _buttons)
+                        if (btn.Bounds.Contains(cursor))
+                        {
+                            m.Result = (IntPtr)HTCLIENT;
+                            return;
+                        }
+                    // drag no title bar
                     m.Result = (IntPtr)HTCAPTION;
+                }
                 else
                     m.Result = (IntPtr)HTCLIENT;
 
