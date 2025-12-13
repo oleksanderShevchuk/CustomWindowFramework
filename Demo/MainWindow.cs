@@ -1,19 +1,13 @@
-﻿namespace CustomWindowFramework.Demo
+﻿using CustomWindowFramework.Core;
+
+namespace CustomWindowFramework.Demo
 {
-    public class MainWindow : Form
+    public class MainWindow : WindowBase
     {
         public MainWindow()
         {
-            InitializeWindow();
-        }
-
-        private void InitializeWindow()
-        {
-            Text = "Custom Window Framework (Bootstrap)";
-            StartPosition = FormStartPosition.CenterScreen;
+            Text = "Custom Window Framework — Borderless";
             Size = new Size(1000, 700);
-
-            BackColor = Color.FromArgb(30, 30, 30);
         }
     }
 }
