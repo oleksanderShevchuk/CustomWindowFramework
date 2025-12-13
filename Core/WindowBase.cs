@@ -1,16 +1,25 @@
-﻿namespace CustomWindowFramework.Core
+﻿using System.Runtime.InteropServices;
+using Timer = System.Windows.Forms.Timer;
+
+namespace CustomWindowFramework.Core
 {
     public abstract class WindowBase : Form
     {
         private const int BORDER_WIDTH = 6;
         private List<WindowButton> _buttons = new List<WindowButton>();
+
+        // DPI-aware
         private float _dpiScale => DeviceDpi / 96f;
-        private int TitleHeight => (int)(30 * _dpiScale);
+        protected int TitleHeight => (int)(30 * _dpiScale);
+
+        private WindowTheme _theme = WindowTheme.Dark;
+        private Timer _animationTimer;
 
         protected WindowBase()
         {
             InitializeWindow();
             InitializeButtons();
+            InitializeAnimation();
         }
 
         private void InitializeWindow()
@@ -20,10 +29,17 @@
 
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size((int)(400 * _dpiScale), (int)(300 * _dpiScale));
-            BackColor = Color.FromArgb(32, 32, 32);
+            BackColor = _theme.BackgroundColor;
 
             MouseMove += WindowBase_MouseMove;
             MouseDown += WindowBase_MouseDown;
+        }
+
+        public void SetTheme(WindowTheme theme)
+        {
+            _theme = theme;
+            BackColor = _theme.BackgroundColor;
+            Invalidate();
         }
 
         private void InitializeButtons()
@@ -38,6 +54,13 @@
 
             foreach (var btn in _buttons)
                 btn.Clicked += OnButtonClicked;
+        }
+
+        private void InitializeAnimation()
+        {
+            _animationTimer = new Timer { Interval = 16 }; // ~60 FPS
+            _animationTimer.Tick += (s, e) => Invalidate();
+            _animationTimer.Start();
         }
 
         private void OnButtonClicked(WindowButton btn)
@@ -80,24 +103,6 @@
                 Invalidate();
         }
 
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            Graphics g = e.Graphics;
-
-            // title bar
-            using (Brush brush = new SolidBrush(Color.FromArgb(40, 40, 40)))
-                g.FillRectangle(brush, 0, 0, ClientSize.Width, TitleHeight);
-
-            // title text
-            using (Brush brush = new SolidBrush(Color.White))
-                g.DrawString(Text, Font, brush, 10, 5);
-
-            // buttons
-            foreach (var btn in _buttons)
-                btn.Draw(g);
-        }
-
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
@@ -108,17 +113,55 @@
                 int w = ClientSize.Width;
 
                 for (int i = 0; i < 3; i++)
-                {
                     _buttons[i].Bounds = new Rectangle(w - (i + 1) * btnSize, 0, btnSize, btnSize);
-                }
 
                 Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+
+            // title bar
+            using (Brush brush = new SolidBrush(_theme.TitleBarColor))
+                g.FillRectangle(brush, 0, 0, ClientSize.Width, TitleHeight);
+
+            // title text
+            using (Brush brush = new SolidBrush(_theme.TextColor))
+                g.DrawString(Text, Font, brush, 10, 5);
+
+            // buttons
+            foreach (var btn in _buttons)
+                btn.Draw(g, _theme);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            EnableShadow();
+        }
+
+        private void EnableShadow()
+        {
+            if (Environment.OSVersion.Version.Major >= 6) // Vista+
+            {
+                MARGINS margins = new MARGINS() { cxLeftWidth = 1, cxRightWidth = 1, cyTopHeight = 1, cyBottomHeight = 1 };
+                DwmExtendFrameIntoClientArea(Handle, ref margins);
             }
         }
 
         protected override void WndProc(ref Message m)
         {
             const int WM_NCHITTEST = 0x0084;
+            const int WM_GETMINMAXINFO = 0x0024;
+
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                base.WndProc(ref m);
+                return;
+            }
 
             if (m.Msg == WM_NCHITTEST)
             {
@@ -128,7 +171,6 @@
                 int w = ClientSize.Width;
                 int h = ClientSize.Height;
 
-                // resize zones
                 if (cursor.X < BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
                     m.Result = (IntPtr)HTTOPLEFT;
                 else if (cursor.X > w - BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
@@ -153,6 +195,7 @@
                             m.Result = (IntPtr)HTCLIENT;
                             return;
                         }
+
                     m.Result = (IntPtr)HTCAPTION;
                 }
                 else
@@ -164,7 +207,14 @@
             base.WndProc(ref m);
         }
 
-        // Win32 hit-test constants
+        // Win32 DWM Shadow
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+
+        // Hit-test constants
         private const int HTCLIENT = 1;
         private const int HTCAPTION = 2;
         private const int HTLEFT = 10;

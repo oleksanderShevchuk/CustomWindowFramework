@@ -6,8 +6,12 @@
     {
         public Rectangle Bounds;
         public ButtonType Type;
+
         public bool IsHover;
         public bool IsPressed;
+
+        private Color _currentColor;
+        private Color _targetColor;
 
         public event Action<WindowButton>? Clicked;
 
@@ -15,17 +19,27 @@
         {
             Type = type;
             Bounds = bounds;
+            _currentColor = Color.Transparent;
+            _targetColor = Color.Transparent;
         }
 
-        public void Draw(Graphics g)
+        public void UpdateColor(WindowTheme theme)
         {
-            Color bg = IsHover ? Color.FromArgb(50, 50, 50) : Color.FromArgb(40, 40, 40);
-            if (IsPressed) bg = Color.FromArgb(70, 70, 70);
+            _targetColor = IsPressed ? theme.ButtonPressed :
+                           IsHover ? theme.ButtonHover :
+                           theme.ButtonNormal;
 
-            using (Brush brush = new SolidBrush(bg))
+            _currentColor = LerpColor(_currentColor, _targetColor, 0.2f);
+        }
+
+        public void Draw(Graphics g, WindowTheme theme)
+        {
+            UpdateColor(theme);
+
+            using (Brush brush = new SolidBrush(_currentColor))
                 g.FillRectangle(brush, Bounds);
 
-            using (Pen pen = new Pen(Color.White, 2))
+            using (Pen pen = new Pen(theme.TextColor, 2))
             {
                 int cx = Bounds.X + Bounds.Width / 2;
                 int cy = Bounds.Y + Bounds.Height / 2;
@@ -47,5 +61,14 @@
         }
 
         public void OnClick() => Clicked?.Invoke(this);
+
+        private static Color LerpColor(Color from, Color to, float t)
+        {
+            int r = (int)(from.R + (to.R - from.R) * t);
+            int g = (int)(from.G + (to.G - from.G) * t);
+            int b = (int)(from.B + (to.B - from.B) * t);
+            int a = (int)(from.A + (to.A - from.A) * t);
+            return Color.FromArgb(a, r, g, b);
+        }
     }
 }
