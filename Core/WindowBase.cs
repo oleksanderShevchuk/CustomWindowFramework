@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using Microsoft.Win32;
+using System.Runtime.InteropServices;
 using Timer = System.Windows.Forms.Timer;
 
 namespace CustomWindowFramework.Core
@@ -12,14 +13,17 @@ namespace CustomWindowFramework.Core
         private float _dpiScale => DeviceDpi / 96f;
         protected int TitleHeight => (int)(30 * _dpiScale);
 
-        private WindowTheme _theme = WindowTheme.Dark;
+        private WindowTheme _theme;
         private Timer _animationTimer;
 
         protected WindowBase()
         {
+            _theme = IsSystemInDarkMode() ? WindowTheme.Dark : WindowTheme.Light;
+
             InitializeWindow();
             InitializeButtons();
             InitializeAnimation();
+            SubscribeSystemThemeChange();
         }
 
         private void InitializeWindow()
@@ -33,13 +37,6 @@ namespace CustomWindowFramework.Core
 
             MouseMove += WindowBase_MouseMove;
             MouseDown += WindowBase_MouseDown;
-        }
-
-        public void SetTheme(WindowTheme theme)
-        {
-            _theme = theme;
-            BackColor = _theme.BackgroundColor;
-            Invalidate();
         }
 
         private void InitializeButtons()
@@ -61,6 +58,44 @@ namespace CustomWindowFramework.Core
             _animationTimer = new Timer { Interval = 16 }; // ~60 FPS
             _animationTimer.Tick += (s, e) => Invalidate();
             _animationTimer.Start();
+        }
+
+        private void SubscribeSystemThemeChange()
+        {
+            SystemEvents.UserPreferenceChanged += (s, e) =>
+            {
+                if (e.Category == UserPreferenceCategory.General)
+                    SetTheme(IsSystemInDarkMode() ? WindowTheme.Dark : WindowTheme.Light);
+            };
+        }
+
+        public void SetTheme(WindowTheme theme)
+        {
+            _theme = theme;
+            BackColor = _theme.BackgroundColor;
+            Invalidate();
+        }
+
+        protected static bool IsSystemInDarkMode()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    if (key != null)
+                    {
+                        object value = key.GetValue("AppsUseLightTheme");
+                        if (value != null && value is int intValue)
+                        {
+                            // 0 = Dark, 1 = Light
+                            return intValue == 0;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return true;
         }
 
         private void OnButtonClicked(WindowButton btn)

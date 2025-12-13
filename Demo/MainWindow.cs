@@ -24,6 +24,8 @@ namespace CustomWindowFramework.Demo
             };
 
             Controls.Add(_toggleThemeButton);
+
+            ThemeIsDark = IsSystemInDarkMode();
         }
 
         private bool ThemeIsDark = true;
