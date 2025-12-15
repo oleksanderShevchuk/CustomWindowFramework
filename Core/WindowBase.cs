@@ -6,12 +6,12 @@ namespace CustomWindowFramework.Core
 {
     public abstract class WindowBase : Form
     {
-        private const int BORDER_WIDTH = 6;
-        private List<WindowButton> _buttons = new List<WindowButton>();
+        protected Panel ContentHost;
+        private readonly List<WindowButton> _buttons = new();
 
-        // DPI-aware
         private float _dpiScale => DeviceDpi / 96f;
-        protected int TitleHeight => (int)(30 * _dpiScale);
+        private int TitleHeight => Math.Max((int)(30 * _dpiScale), Font.Height + (int)(10 * _dpiScale));
+        private int BorderWidth => (int)(6 * _dpiScale);
 
         private WindowTheme _theme;
         private Timer _animationTimer;
@@ -28,37 +28,47 @@ namespace CustomWindowFramework.Core
 
         private void InitializeWindow()
         {
+            ContentHost = new Panel
+            {
+                BackColor = _theme.BackgroundColor,
+                Enabled = false
+            };
+
+            base.Controls.Add(ContentHost);
+
             FormBorderStyle = FormBorderStyle.None;
-            SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
+
+            SetStyle(
+                ControlStyles.ResizeRedraw |
+                ControlStyles.OptimizedDoubleBuffer |
+                ControlStyles.AllPaintingInWmPaint,
+                true);
 
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size((int)(400 * _dpiScale), (int)(300 * _dpiScale));
             BackColor = _theme.BackgroundColor;
 
-            MouseMove += WindowBase_MouseMove;
-            MouseDown += WindowBase_MouseDown;
+            MouseMove += OnMouseMoveInternal;
+            MouseDown += OnMouseDownInternal;
         }
 
-        private void InitializeButtons()
+        protected void AddContent(Control control)
         {
-            int btnSize = TitleHeight;
-            int w = ClientSize.Width;
-
-            _buttons.Clear();
-            _buttons.Add(new WindowButton(ButtonType.Close, new Rectangle(w - btnSize, 0, btnSize, btnSize)));
-            _buttons.Add(new WindowButton(ButtonType.Maximize, new Rectangle(w - 2 * btnSize, 0, btnSize, btnSize)));
-            _buttons.Add(new WindowButton(ButtonType.Minimize, new Rectangle(w - 3 * btnSize, 0, btnSize, btnSize)));
-
-            foreach (var btn in _buttons)
-                btn.Clicked += OnButtonClicked;
+            ContentHost.Controls.Add(control);
         }
 
-        private void InitializeAnimation()
+        protected override void OnLayout(LayoutEventArgs levent)
         {
-            _animationTimer = new Timer { Interval = 16 }; // ~60 FPS
-            _animationTimer.Tick += (s, e) => Invalidate();
-            _animationTimer.Start();
+            base.OnLayout(levent);
+
+            ContentHost.Bounds = new Rectangle(
+                0,
+                TitleHeight,
+                ClientSize.Width,
+                ClientSize.Height - TitleHeight);
         }
+
+        #region Theme
 
         private void SubscribeSystemThemeChange()
         {
@@ -76,26 +86,62 @@ namespace CustomWindowFramework.Core
             Invalidate();
         }
 
-        protected static bool IsSystemInDarkMode()
+        private static bool IsSystemInDarkMode()
         {
             try
             {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                using var key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+
+                return key?.GetValue("AppsUseLightTheme") is int v && v == 0;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        #endregion
+
+        #region Buttons / Input
+
+        private void InitializeButtons()
+        {
+            int btnSize = TitleHeight;
+            int w = ClientSize.Width;
+
+            _buttons.Clear();
+            _buttons.Add(new WindowButton(ButtonType.Close, new Rectangle(w - btnSize, 0, btnSize, btnSize)));
+            _buttons.Add(new WindowButton(ButtonType.Maximize, new Rectangle(w - 2 * btnSize, 0, btnSize, btnSize)));
+            _buttons.Add(new WindowButton(ButtonType.Minimize, new Rectangle(w - 3 * btnSize, 0, btnSize, btnSize)));
+
+            foreach (var btn in _buttons)
+                btn.Clicked += OnButtonClicked;
+        }
+
+        private void OnMouseDownInternal(object? sender, MouseEventArgs e)
+        {
+            foreach (var btn in _buttons)
+                if (btn.Bounds.Contains(e.Location))
+                    btn.OnClick();
+        }
+
+        private void OnMouseMoveInternal(object? sender, MouseEventArgs e)
+        {
+            bool redraw = false;
+
+            foreach (var btn in _buttons)
+            {
+                bool hover = btn.Bounds.Contains(e.Location);
+                if (btn.IsHover != hover)
                 {
-                    if (key != null)
-                    {
-                        object value = key.GetValue("AppsUseLightTheme");
-                        if (value != null && value is int intValue)
-                        {
-                            // 0 = Dark, 1 = Light
-                            return intValue == 0;
-                        }
-                    }
+                    btn.IsHover = hover;
+                    redraw = true;
                 }
             }
-            catch { }
-            return true;
+
+            if (redraw)
+                Invalidate();
         }
 
         private void OnButtonClicked(WindowButton btn)
@@ -113,31 +159,19 @@ namespace CustomWindowFramework.Core
                     break;
             }
         }
+        #endregion
 
-        private void WindowBase_MouseDown(object sender, MouseEventArgs e)
+        #region Animation
+
+        private void InitializeAnimation()
         {
-            foreach (var btn in _buttons)
-                if (btn.Bounds.Contains(e.Location))
-                    btn.OnClick();
+            _animationTimer = new Timer { Interval = 16 };
+            _animationTimer.Tick += (_, _) => Invalidate();
+            _animationTimer.Start();
         }
+        #endregion
 
-        private void WindowBase_MouseMove(object sender, MouseEventArgs e)
-        {
-            bool needInvalidate = false;
-            foreach (var btn in _buttons)
-            {
-                bool hover = btn.Bounds.Contains(e.Location);
-                if (hover != btn.IsHover)
-                {
-                    btn.IsHover = hover;
-                    needInvalidate = true;
-                }
-            }
-
-            if (needInvalidate)
-                Invalidate();
-        }
-
+        #region Paint
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
@@ -156,18 +190,15 @@ namespace CustomWindowFramework.Core
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            Graphics g = e.Graphics;
+            //base.OnPaint(e);
+            var g = e.Graphics;
 
-            // title bar
-            using (Brush brush = new SolidBrush(_theme.TitleBarColor))
-                g.FillRectangle(brush, 0, 0, ClientSize.Width, TitleHeight);
+            using var titleBrush = new SolidBrush(_theme.TitleBarColor);
+            g.FillRectangle(titleBrush, 0, 0, ClientSize.Width, TitleHeight);
 
-            // title text
-            using (Brush brush = new SolidBrush(_theme.TextColor))
-                g.DrawString(Text, Font, brush, 10, 5);
+            using var textBrush = new SolidBrush(_theme.TextColor);
+            g.DrawString(Text, Font, textBrush, 10, 6);
 
-            // buttons
             foreach (var btn in _buttons)
                 btn.Draw(g, _theme);
         }
@@ -180,10 +211,10 @@ namespace CustomWindowFramework.Core
 
         private void EnableShadow()
         {
-            if (Environment.OSVersion.Version.Major >= 6) // Vista+
+            if (Environment.OSVersion.Version.Major >= 6)
             {
-                MARGINS margins = new MARGINS() { cxLeftWidth = 1, cxRightWidth = 1, cyTopHeight = 1, cyBottomHeight = 1 };
-                DwmExtendFrameIntoClientArea(Handle, ref margins);
+                var m = new MARGINS { cxLeftWidth = 1, cxRightWidth = 1, cyTopHeight = 1, cyBottomHeight = 1 };
+                DwmExtendFrameIntoClientArea(Handle, ref m);
             }
         }
 
@@ -200,27 +231,31 @@ namespace CustomWindowFramework.Core
 
             if (m.Msg == WM_NCHITTEST)
             {
-                base.WndProc(ref m);
+                if (WindowState == FormWindowState.Maximized)
+                {
+                    m.Result = (IntPtr)HTCLIENT;
+                    return;
+                }
 
                 Point cursor = PointToClient(Cursor.Position);
                 int w = ClientSize.Width;
                 int h = ClientSize.Height;
 
-                if (cursor.X < BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
+                if (cursor.X < BorderWidth && cursor.Y < BorderWidth)
                     m.Result = (IntPtr)HTTOPLEFT;
-                else if (cursor.X > w - BORDER_WIDTH && cursor.Y < BORDER_WIDTH)
+                else if (cursor.X > w - BorderWidth && cursor.Y < BorderWidth)
                     m.Result = (IntPtr)HTTOPRIGHT;
-                else if (cursor.X < BORDER_WIDTH && cursor.Y > h - BORDER_WIDTH)
+                else if (cursor.X < BorderWidth && cursor.Y > h - BorderWidth)
                     m.Result = (IntPtr)HTBOTTOMLEFT;
-                else if (cursor.X > w - BORDER_WIDTH && cursor.Y > h - BORDER_WIDTH)
+                else if (cursor.X > w - BorderWidth && cursor.Y > h - BorderWidth)
                     m.Result = (IntPtr)HTBOTTOMRIGHT;
-                else if (cursor.X < BORDER_WIDTH)
+                else if (cursor.X < BorderWidth)
                     m.Result = (IntPtr)HTLEFT;
-                else if (cursor.X > w - BORDER_WIDTH)
+                else if (cursor.X > w - BorderWidth)
                     m.Result = (IntPtr)HTRIGHT;
-                else if (cursor.Y < BORDER_WIDTH)
+                else if (cursor.Y < BorderWidth)
                     m.Result = (IntPtr)HTTOP;
-                else if (cursor.Y > h - BORDER_WIDTH)
+                else if (cursor.Y > h - BorderWidth)
                     m.Result = (IntPtr)HTBOTTOM;
                 else if (cursor.Y < TitleHeight)
                 {
@@ -242,13 +277,16 @@ namespace CustomWindowFramework.Core
             base.WndProc(ref m);
         }
 
-        // Win32 DWM Shadow
         [StructLayout(LayoutKind.Sequential)]
-        private struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
+        private struct MARGINS
+        {
+            public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight;
+        }
 
         [DllImport("dwmapi.dll")]
-        private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+        private static extern int DwmExtendFrameIntoClientArea(IntPtr hWnd, ref MARGINS pMargins);
 
+        #endregion
         // Hit-test constants
         private const int HTCLIENT = 1;
         private const int HTCAPTION = 2;
