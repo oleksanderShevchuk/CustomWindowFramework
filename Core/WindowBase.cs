@@ -7,6 +7,7 @@ namespace CustomWindowFramework.Core
     public abstract class WindowBase : Form
     {
         protected Panel ContentHost;
+        private readonly InputManager _input = new();
         private readonly List<WindowButton> _buttons = new();
 
         private float _dpiScale => DeviceDpi / 96f;
@@ -119,29 +120,20 @@ namespace CustomWindowFramework.Core
                 btn.Clicked += OnButtonClicked;
         }
 
-        private void OnMouseDownInternal(object? sender, MouseEventArgs e)
-        {
-            foreach (var btn in _buttons)
-                if (btn.Bounds.Contains(e.Location))
-                    btn.OnClick();
-        }
-
         private void OnMouseMoveInternal(object? sender, MouseEventArgs e)
         {
-            bool redraw = false;
+            _input.ProcessMouseMove(e.Location, _buttons);
+        }
 
-            foreach (var btn in _buttons)
-            {
-                bool hover = btn.Bounds.Contains(e.Location);
-                if (btn.IsHover != hover)
-                {
-                    btn.IsHover = hover;
-                    redraw = true;
-                }
-            }
+        private void OnMouseDownInternal(object? sender, MouseEventArgs e)
+        {
+            _input.ProcessMouseDown(e.Location, _buttons);
+        }
 
-            if (redraw)
-                Invalidate();
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            _input.ProcessMouseUp(e.Location);
         }
 
         private void OnButtonClicked(WindowButton btn)
