@@ -16,6 +16,8 @@ namespace CustomWindowFramework.Core
 
         private WindowTheme _theme;
         private Timer _animationTimer;
+        private bool _draggingWindow;
+        private Point _windowDragOffset;
 
         protected WindowBase()
         {
@@ -122,17 +124,45 @@ namespace CustomWindowFramework.Core
 
         private void OnMouseMoveInternal(object? sender, MouseEventArgs e)
         {
+            if (_draggingWindow)
+            {
+                Location = new Point(
+                    Location.X + e.X - _windowDragOffset.X,
+                    Location.Y + e.Y - _windowDragOffset.Y
+                );
+                return;
+            }
+
             _input.ProcessMouseMove(e.Location, _buttons);
         }
 
         private void OnMouseDownInternal(object? sender, MouseEventArgs e)
         {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            if (e.Y < TitleHeight && !_buttons.Any(b => b.Bounds.Contains(e.Location)))
+            {
+                _draggingWindow = true;
+                _windowDragOffset = e.Location;
+                Capture = true;
+                return;
+            }
+
             _input.ProcessMouseDown(e.Location, _buttons);
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+
+            if (_draggingWindow)
+            {
+                _draggingWindow = false;
+                Capture = false;
+                return;
+            }
+
             _input.ProcessMouseUp(e.Location);
         }
 
@@ -258,7 +288,7 @@ namespace CustomWindowFramework.Core
                             return;
                         }
 
-                    m.Result = (IntPtr)HTCAPTION;
+                    m.Result = (IntPtr)HTCLIENT;
                 }
                 else
                     m.Result = (IntPtr)HTCLIENT;

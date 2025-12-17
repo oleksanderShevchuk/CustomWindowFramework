@@ -4,11 +4,18 @@
     {
         private IInputElement? _hovered;
         private IInputElement? _captured;
+        private Point _lastPos;
 
         public void ProcessMouseMove(Point p, IEnumerable<IInputElement> elements)
         {
             if (_captured != null)
+            {
+                if (_captured is IDragElement drag)
+                    drag.OnDrag(p, new Point(p.X - _lastPos.X, p.Y - _lastPos.Y));
+
+                _lastPos = p;
                 return;
+            }
 
             foreach (var el in elements)
             {
@@ -35,6 +42,7 @@
                 if (el.Bounds.Contains(p))
                 {
                     _captured = el;
+                    _lastPos = p;
                     el.OnMouseDown(p);
                     return;
                 }
