@@ -9,15 +9,18 @@ namespace CustomWindowFramework.Core
         protected Panel ContentHost;
         private readonly InputManager _input = new();
         private readonly List<WindowButton> _buttons = new();
-
-        private float _dpiScale => DeviceDpi / 96f;
-        private int TitleHeight => Math.Max((int)(30 * _dpiScale), Font.Height + (int)(10 * _dpiScale));
-        private int BorderWidth => (int)(6 * _dpiScale);
-
         private WindowTheme _theme;
         private Timer _animationTimer;
         private bool _draggingWindow;
         private Point _windowDragOffset;
+        private SnapState _snapState = SnapState.None;
+        private Rectangle _restoreBounds;
+        private bool _restoreArmed;
+        private SnapPreviewForm? _snapPreview;
+
+        private float _dpiScale => DeviceDpi / 96f;
+        private int TitleHeight => Math.Max((int)(30 * _dpiScale), Font.Height + (int)(10 * _dpiScale));
+        private int BorderWidth => (int)(6 * _dpiScale);
 
         protected WindowBase()
         {
@@ -50,6 +53,8 @@ namespace CustomWindowFramework.Core
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size((int)(400 * _dpiScale), (int)(300 * _dpiScale));
             BackColor = _theme.BackgroundColor;
+
+            _snapPreview = new SnapPreviewForm();
 
             MouseMove += OnMouseMoveInternal;
             MouseDown += OnMouseDownInternal;
@@ -130,6 +135,8 @@ namespace CustomWindowFramework.Core
                     Location.X + e.X - _windowDragOffset.X,
                     Location.Y + e.Y - _windowDragOffset.Y
                 );
+
+                DetectSnap();
                 return;
             }
 
@@ -160,6 +167,12 @@ namespace CustomWindowFramework.Core
             {
                 _draggingWindow = false;
                 Capture = false;
+
+                HideSnapPreview();
+
+                if (_snapState != SnapState.None)
+                    ApplySnapFinal();
+
                 return;
             }
 
@@ -178,6 +191,139 @@ namespace CustomWindowFramework.Core
                     break;
                 case ButtonType.Maximize:
                     WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+                    break;
+            }
+        }
+
+        private void DetectSnap()
+        {
+            Screen screen = Screen.FromHandle(Handle);
+            Rectangle work = screen.WorkingArea;
+
+            if (Top <= work.Top + SNAP_THRESHOLD)
+            {
+                ApplySnap(SnapState.Maximized, work);
+                return;
+            }
+
+            if (Left <= work.Left + SNAP_THRESHOLD)
+            {
+                ApplySnap(SnapState.Left, work);
+                return;
+            }
+
+            if (Right >= work.Right - SNAP_THRESHOLD)
+            {
+                ApplySnap(SnapState.Right, work);
+                return;
+            }
+
+            if (_snapState != SnapState.None)
+            {
+                int dx = Math.Abs(Cursor.Position.X - (_restoreBounds.Left + _restoreBounds.Width / 2));
+                int dy = Math.Abs(Cursor.Position.Y - (_restoreBounds.Top + 10));
+
+                if (dx > SNAP_THRESHOLD * 2 || dy > SNAP_THRESHOLD * 2)
+                    RestoreFromSnap();
+            }
+        }
+
+        private void ApplySnap(SnapState state, Rectangle work)
+        {
+            if (_snapState == state)
+                return;
+
+            if (_snapState == SnapState.None)
+                _restoreBounds = Bounds;
+
+            _snapState = state;
+            _restoreArmed = true;
+
+            Rectangle previewBounds;
+
+            switch (state)
+            {
+                case SnapState.Maximized:
+                    previewBounds = work;
+                    break;
+
+                case SnapState.Left:
+                    previewBounds = new Rectangle(
+                        work.Left,
+                        work.Top,
+                        work.Width / 2,
+                        work.Height);
+                    break;
+
+                case SnapState.Right:
+                    previewBounds = new Rectangle(
+                        work.Left + work.Width / 2,
+                        work.Top,
+                        work.Width / 2,
+                        work.Height);
+                    break;
+
+                default:
+                    return;
+            }
+
+            ShowSnapPreview(previewBounds);
+        }
+
+        private void ShowSnapPreview(Rectangle bounds)
+        {
+            if (_snapPreview == null)
+                return;
+
+            _snapPreview.Bounds = bounds;
+
+            if (!_snapPreview.Visible)
+                _snapPreview.Show();
+        }
+
+        private void RestoreFromSnap()
+        {
+            if (_snapState == SnapState.None || !_restoreArmed)
+                return;
+
+            _snapState = SnapState.None;
+            Bounds = _restoreBounds;
+            _restoreArmed = false;
+
+            HideSnapPreview();
+        }
+
+        private void HideSnapPreview()
+        {
+            if (_snapPreview?.Visible == true)
+                _snapPreview.Hide();
+        }
+
+        private void ApplySnapFinal()
+        {
+            Screen screen = Screen.FromHandle(Handle);
+            Rectangle work = screen.WorkingArea;
+
+            switch (_snapState)
+            {
+                case SnapState.Maximized:
+                    Bounds = work;
+                    break;
+
+                case SnapState.Left:
+                    Bounds = new Rectangle(
+                        work.Left,
+                        work.Top,
+                        work.Width / 2,
+                        work.Height);
+                    break;
+
+                case SnapState.Right:
+                    Bounds = new Rectangle(
+                        work.Left + work.Width / 2,
+                        work.Top,
+                        work.Width / 2,
+                        work.Height);
                     break;
             }
         }
@@ -320,5 +466,6 @@ namespace CustomWindowFramework.Core
         private const int HTBOTTOM = 15;
         private const int HTBOTTOMLEFT = 16;
         private const int HTBOTTOMRIGHT = 17;
+        private const int SNAP_THRESHOLD = 20;
     }
 }
