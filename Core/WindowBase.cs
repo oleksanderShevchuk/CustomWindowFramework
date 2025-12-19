@@ -393,7 +393,7 @@ namespace CustomWindowFramework.Core
 
             if (m.Msg == WM_GETMINMAXINFO)
             {
-                base.WndProc(ref m);
+                WmGetMinMaxInfo(m.HWnd, m.LParam);
                 return;
             }
 
@@ -445,10 +445,45 @@ namespace CustomWindowFramework.Core
             base.WndProc(ref m);
         }
 
+        private void WmGetMinMaxInfo(IntPtr hWnd, IntPtr lParam)
+        {
+            var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+
+            Screen screen = Screen.FromHandle(hWnd);
+            Rectangle work = screen.WorkingArea;
+            Rectangle bounds = screen.Bounds;
+
+            mmi.ptMaxPosition.X = work.Left - bounds.Left;
+            mmi.ptMaxPosition.Y = work.Top - bounds.Top;
+
+            mmi.ptMaxSize.X = work.Width;
+            mmi.ptMaxSize.Y = work.Height;
+
+            Marshal.StructureToPtr(mmi, lParam, true);
+        }
+
+
         [StructLayout(LayoutKind.Sequential)]
         private struct MARGINS
         {
             public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MINMAXINFO
+        {
+            public POINT ptReserved;
+            public POINT ptMaxSize;
+            public POINT ptMaxPosition;
+            public POINT ptMinTrackSize;
+            public POINT ptMaxTrackSize;
         }
 
         [DllImport("dwmapi.dll")]
